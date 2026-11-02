@@ -18,6 +18,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { AuthorizerVerdict, PromptPermissionDetails } from "@gotgenes/pi-permission-system";
 
+import type { AskOrigin } from "./ask-origin";
 import type { ClassifierConfig } from "./config-schema";
 import type { FullCommandContext } from "./context";
 import type { IncludedGuidance } from "./guidance";
@@ -112,6 +113,8 @@ export interface ReviewAskInputs {
   guidance?: readonly IncludedGuidance[];
   /** The user's own messages when intent is available; absent renders no user block. */
   userIntent?: UserIntent;
+  /** The working directory and a subagent's brief; absent renders neither. */
+  origin?: AskOrigin;
 }
 
 /**
@@ -168,6 +171,7 @@ export async function reviewAsk(inputs: ReviewAskInputs): Promise<ReviewOutcome>
             inputs.context ?? null,
             inputs.guidance ?? [],
             inputs.userIntent,
+            inputs.origin,
           ),
           timestamp: Date.now(),
         },

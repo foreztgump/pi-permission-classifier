@@ -415,6 +415,19 @@ describe("user intent", () => {
     expect(prompt).toContain("<user-message>\npush it\n</user-message>");
   });
 
+  it("hands the link's origin reader to the LLM judge only", async () => {
+    const h = harness(config({ mode: "quick-then-llm", quickJudge: QUICK_PAIR }), {
+      classify: async () => QUICK_UNCERTAIN,
+    });
+    const getAskOrigin = vi.fn(() => ({ cwd: "/tmp/wt", cwdOf: "requester" as const, brief: "do x" }));
+    await createJudgeLink({ ...h.deps, getAskOrigin })(askDetails(), QUERY, fakeLog());
+    expect(getAskOrigin).toHaveBeenCalledTimes(1);
+    const prompt = (h.complete.mock.calls[0]![1] as { messages: { content: string }[] }).messages[0]!
+      .content;
+    expect(prompt).toContain("<agent-brief>\ndo x\n</agent-brief>");
+    expect(JSON.stringify(h.classify.mock.calls[0]![1].state)).not.toContain("do x");
+  });
+
   it("gives only the LLM judge the intent in mode quick-then-llm", async () => {
     const h = harness(config({ mode: "quick-then-llm", quickJudge: QUICK_PAIR }), {
       classify: async () => QUICK_UNCERTAIN,

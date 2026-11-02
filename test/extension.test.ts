@@ -1359,6 +1359,40 @@ describe("user intent wiring", () => {
     }
   });
 
+  it("reads the origin of an ask from the latest session_start ctx", () => {
+    const pi = makeFakePi();
+    const ctx = {
+      ...ctxWithUserText([]),
+      sessionManager: {
+        getBranch: vi.fn(() => [
+          {
+            type: "custom",
+            customType: "pstack-agents",
+            id: "c1",
+            parentId: null,
+            timestamp: "2026-11-02T00:00:00Z",
+            data: { agent: { id: "a1", sessionId: "child-1", cwd: "/tmp/wt", brief: "do x" } },
+          },
+        ]),
+      },
+    };
+    start(pi);
+    publishForSession();
+    pi.lifecycle.get("session_start")?.({}, ctx);
+    pi.events.get(READY_CHANNEL)?.(READY_EVENT);
+    const getAskOrigin = vi.mocked(createJudgeLink).mock.lastCall?.[0].getAskOrigin;
+    expect(getAskOrigin).toBeTypeOf("function");
+    expect(getAskOrigin!({ forwarded: true, sessionId: "child-1" })).toEqual({
+      cwd: "/tmp/wt",
+      cwdOf: "requester",
+      brief: "do x",
+    });
+    expect(getAskOrigin!({ forwarded: true, sessionId: "nope" })).toEqual({
+      cwd: "/project",
+      cwdOf: "session",
+    });
+  });
+
   it("reads no user text after session_shutdown", () => {
     const pi = makeFakePi();
     const ctx = ctxWithUserText(["task"]);

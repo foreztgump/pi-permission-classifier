@@ -22,6 +22,7 @@ import {
   type FailureKind,
 } from "#src/verdict-policy";
 import { assistantText, assistantToolCall } from "#test/fixtures/assistant-message";
+import { readAskOrigin } from "#src/ask-origin";
 import { askDetails } from "#test/fixtures/details";
 
 const CONFIG = classifierConfigSchema.parse({});
@@ -1125,5 +1126,114 @@ describe("user intent", () => {
     );
     await authorize(askDetails(), QUERY, fakeLog());
     expect(getUserIntent).not.toHaveBeenCalled();
+  });
+});
+
+describe("ask origin", () => {
+  const CHILD = { agentName: "worker", forwarded: true, sessionId: "child-1" };
+
+  function sentPrompt(complete: CompleteFn): string {
+    const context = vi.mocked(complete).mock.calls[0]![1] as {
+      messages: { content: string }[];
+    };
+    return context.messages[0]!.content;
+  }
+
+  /** A root session that started one subagent, as pstack records it. */
+  function rootSession(entries: unknown[]) {
+    return { cwd: "/root/project", sessionManager: { getBranch: () => entries as never[] } };
+  }
+
+  const KNOWN_CHILD = {
+    type: "custom",
+    customType: "pstack-agents",
+    id: "c1",
+    parentId: null,
+    timestamp: "2026-11-02T00:00:00Z",
+    data: {
+      agent: { id: "a1", sessionId: "child-1", cwd: "/tmp/wt", brief: "run the parser tests, nothing else" },
+      status: "running",
+    },
+  };
+
+  it("gives a forwarded ask from a known child that child's cwd and brief", async () => {
+    const complete = completeReporting({ verdict: "defer" });
+    const session = rootSession([KNOWN_CHILD]);
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, getAskOrigin: (requester) => readAskOrigin(session, requester, {}) }),
+    );
+    await authorize(askDetails({ requester: CHILD }), QUERY, fakeLog());
+    const prompt = sentPrompt(complete);
+    expect(prompt).toContain("- Working directory: /tmp/wt (the requesting agent's)");
+    expect(prompt).toContain("<agent-brief>\nrun the parser tests, nothing else\n</agent-brief>");
+  });
+
+  it("gives a forwarded ask from an unknown child no brief block", async () => {
+    const complete = completeReporting({ verdict: "defer" });
+    const session = rootSession([KNOWN_CHILD]);
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, getAskOrigin: (requester) => readAskOrigin(session, requester, {}) }),
+    );
+    await authorize(
+      askDetails({ requester: { ...CHILD, sessionId: "stranger" } }),
+      QUERY,
+      fakeLog(),
+    );
+    const prompt = sentPrompt(complete);
+    expect(prompt).not.toContain("<agent-brief>");
+    expect(prompt).toContain("- Working directory: /root/project (this session's;");
+  });
+
+  it("gives a local ask the session's cwd and no brief in a root process", async () => {
+    const complete = completeReporting({ verdict: "defer" });
+    const session = rootSession([KNOWN_CHILD]);
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, getAskOrigin: (requester) => readAskOrigin(session, requester, {}) }),
+    );
+    await authorize(askDetails(), QUERY, fakeLog());
+    expect(sentPrompt(complete)).toContain("- Working directory: /root/project (the requesting agent's)");
+    expect(sentPrompt(complete)).not.toContain("<agent-brief>");
+  });
+
+  it("passes the requester facts to the seam, and counts missing facts as forwarded", async () => {
+    const getAskOrigin = vi.fn(() => undefined);
+    const authorize = createClassifierReviewer(makeDeps({ getAskOrigin }));
+    await authorize(askDetails({ requester: CHILD }), QUERY, fakeLog());
+    expect(getAskOrigin).toHaveBeenLastCalledWith({ forwarded: true, sessionId: "child-1" });
+    await authorize(askDetails(), QUERY, fakeLog());
+    expect(getAskOrigin).toHaveBeenLastCalledWith({ forwarded: false, sessionId: null });
+  });
+
+  it.each([
+    ["the seam returns none", { getAskOrigin: () => undefined }],
+    ["there is no seam", {}],
+    [
+      "the seam throws",
+      {
+        getAskOrigin: () => {
+          throw new Error("session gone");
+        },
+      },
+    ],
+  ])("renders neither when %s", async (_name, originDeps) => {
+    const complete = completeReporting({ verdict: "allow" });
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, ...(originDeps as Partial<ClassifierReviewerDeps>) }),
+    );
+    expect(await authorize(askDetails(), QUERY, fakeLog())).toEqual({ kind: "allow" });
+    expect(sentPrompt(complete)).not.toContain("Working directory");
+    expect(sentPrompt(complete)).not.toContain("<agent-brief>");
+  });
+
+  it("never logs the brief", async () => {
+    const log = fakeLog();
+    const session = rootSession([KNOWN_CHILD]);
+    const authorize = createClassifierReviewer(
+      makeDeps({ getAskOrigin: (requester) => readAskOrigin(session, requester, {}) }),
+    );
+    await authorize(askDetails({ requester: CHILD }), QUERY, log);
+    expect(JSON.stringify([log.review.mock.calls, log.debug.mock.calls])).not.toContain(
+      "run the parser tests",
+    );
   });
 });

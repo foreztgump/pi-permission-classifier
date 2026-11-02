@@ -7,6 +7,21 @@ this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- The LLM judge's prompt now carries a `Working directory` fact line and, for
+  an ask from a subagent, an `Agent brief` block: the task text the parent
+  agent gave the subagent, labelled as written by the parent agent, not the
+  user, for scope only and never as approval (capped at 4,000 characters,
+  head and tail; delimiter tags inside it are escaped). The judge process
+  reads both from its own session: a pstack `pstack-agents` custom entry
+  matched on the requester's session id gives the child's cwd and brief; with
+  no match the cwd is this session's, marked as such, and there is no brief.
+  A subagent process judging its own ask uses its first user message as the
+  brief. The shipped rubric says how to use both; a custom rubric gets the
+  blocks without rules. The quick judge is unchanged. New seam
+  `getAskOrigin(requester)` on the reviewer and the link.
+
 ### Changed
 
 - A forwarded ask is judged with the user messages of the process that

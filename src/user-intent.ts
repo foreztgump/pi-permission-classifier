@@ -54,7 +54,7 @@ function userMessageText(entry: SessionEntry): string | null {
 }
 
 /** Clip a message to MAX_MESSAGE_CHARS keeping head and tail. */
-function clip(text: string): { text: string; cut: boolean } {
+export function clip(text: string): { text: string; cut: boolean } {
   if (text.length <= MAX_MESSAGE_CHARS) return { text, cut: false };
   const room = MAX_MESSAGE_CHARS - CUT_MARKER.length;
   const head = Math.ceil(room / 2);
@@ -63,6 +63,15 @@ function clip(text: string): { text: string; cut: boolean } {
     text: text.slice(0, head) + CUT_MARKER + text.slice(text.length - tail),
     cut: true,
   };
+}
+
+/** The first user-role message of a branch, or null: in a subagent, its brief. */
+export function firstUserText(entries: readonly SessionEntry[]): string | null {
+  for (const entry of entries) {
+    const text = userMessageText(entry);
+    if (text !== null) return text;
+  }
+  return null;
 }
 
 /** Select the user text the judges see from a session branch. */

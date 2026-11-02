@@ -60,6 +60,7 @@ import {
   type PermissionsReadyEvent,
 } from "@gotgenes/pi-permission-system";
 
+import { type AskOrigin, type AskRequester, readAskOrigin } from "./ask-origin";
 import {
   COMMAND_NAME,
   type CommandRegistryLike,
@@ -241,6 +242,14 @@ export function createClassifierExtension(
     return readUserIntent(session);
   }
 
+  /**
+   * The working directory and, for a subagent's ask, its brief; read live
+   * from this process's session (see readAskOrigin).
+   */
+  function getAskOrigin(requester: AskRequester): AskOrigin | undefined {
+    return readAskOrigin(session, requester);
+  }
+
   /** Read the launch flag; each item that does not apply is ignored with a warning. */
   function readFlagOverride(): SessionOverride {
     const raw = pi.getFlag(FLAG_NAME);
@@ -402,6 +411,7 @@ export function createClassifierExtension(
     const judge = createJudgeLink({
       getConfig: effectiveConfig,
       getUserIntent,
+      getAskOrigin,
       warn,
       llm: {
         getSessionModel: () => sessionModel,
