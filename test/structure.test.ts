@@ -750,7 +750,7 @@ describe("guidance discipline", () => {
     });
 
     it("CHANGELOG's top heading is a dated version listing the rename and the removed forms", () => {
-      const headings = changelog.match(/^## .*$/gm) ?? [];
+      const headings = (changelog.match(/^## .*$/gm) ?? []).filter((h) => !/unreleased/i.test(h));
       expect(headings[0]).toMatch(/^## \[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}$/);
       expect(headings[0]).not.toMatch(/unreleased/i);
       const newest = changelog

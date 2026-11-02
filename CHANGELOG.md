@@ -5,6 +5,20 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- A forwarded ask is judged with the user messages of the process that
+  serves it. The root session holds what the user wrote, so an ask a
+  subagent forwards now gets the user block; before, every forwarded ask
+  lost it. `readUserIntent` no longer takes the `forwarded` flag; it takes
+  an optional environment and returns none in a subagent process (one that
+  sets `PI_SUBAGENT_PARENT_SESSION` or `PI_AGENT_ROUTER_PARENT_SESSION_ID`),
+  for its own asks too, because a subagent session's user-role messages are
+  the brief its parent model wrote, not words the user wrote. The
+  `getUserIntent(forwarded)` seam keeps its shape.
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

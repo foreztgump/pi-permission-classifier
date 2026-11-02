@@ -110,7 +110,7 @@ export function toolCallsFromSession(lines: Iterable<string>): Map<string, Sessi
       branch.reverse();
       const intent = readUserIntent(
         { sessionManager: { getBranch: () => branch }, hasPendingMessages: () => false },
-        false,
+        {},
       );
       userText.set(nearest, intent === undefined ? undefined : [...intent.messages]);
     }

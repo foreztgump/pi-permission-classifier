@@ -360,9 +360,14 @@ named can be allowed and a command you ruled out is not.
   newest messages back to 24,000 characters in total. A message over
   4,000 characters keeps its head and tail.
 - When it is left out: if any message was cut or dropped by the caps, if a
-  message of yours is still queued, or if the ask was forwarded from a
-  subagent, the prompt has no user block and the judge decides on the
-  rubric alone. None of these defers on its own.
+  message of yours is still queued, or if the judge runs in a subagent
+  process (one that sets `PI_SUBAGENT_PARENT_SESSION` or
+  `PI_AGENT_ROUTER_PARENT_SESSION_ID`), the prompt has no user block and
+  the judge decides on the rubric alone. None of these defers on its own.
+- Forwarded asks: an ask a subagent forwards is judged in the root
+  session, which holds your messages, so the block carries them. A subagent
+  process never sends its session's user messages, for its own asks or for
+  ones it serves, because the parent model wrote that text, not you.
 - Rendering: one data block after the guidance and before the value,
   labelled `Messages the user wrote to the agent in this session, oldest
   first`, with each message in its own `<user-message>` block. A delimiter

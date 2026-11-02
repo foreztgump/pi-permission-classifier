@@ -49,7 +49,7 @@ export interface JudgeLinkDeps {
   /**
    * The user intent for an ask, read live from the session; undefined when
    * intent is not available. `forwarded` is true for an ask a subagent
-   * forwarded.
+   * forwarded; the answer depends on the serving process, not on it.
    */
   getUserIntent?: (forwarded: boolean) => UserIntent | undefined;
   /** Operator warning sink, for the cascade's policy override. */

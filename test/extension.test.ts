@@ -1334,12 +1334,29 @@ describe("user intent wiring", () => {
     expect(first.sessionManager.getBranch).toHaveBeenCalledTimes(1);
   });
 
-  it("gives no intent for a forwarded ask or while a user message is queued", () => {
-    const getForwarded = registeredReader(makeFakePi(), ctxWithUserText(["task"]));
-    expect(getForwarded(true)).toBeUndefined();
+  it("gives the root session's text for a forwarded ask, and none while a user message is queued", () => {
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "");
+    vi.stubEnv("PI_AGENT_ROUTER_PARENT_SESSION_ID", "");
+    try {
+      const getForwarded = registeredReader(makeFakePi(), ctxWithUserText(["task"]));
+      expect(getForwarded(true)).toEqual({ messages: ["task"] });
 
-    const getQueued = registeredReader(makeFakePi(), ctxWithUserText(["task"], true));
-    expect(getQueued(false)).toBeUndefined();
+      const getQueued = registeredReader(makeFakePi(), ctxWithUserText(["task"], true));
+      expect(getQueued(false)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("gives no intent in a subagent process, forwarded or not", () => {
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "root-session");
+    try {
+      const getUserIntent = registeredReader(makeFakePi(), ctxWithUserText(["the parent's brief"]));
+      expect(getUserIntent(true)).toBeUndefined();
+      expect(getUserIntent(false)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("reads no user text after session_shutdown", () => {
