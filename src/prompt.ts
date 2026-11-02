@@ -212,7 +212,7 @@ function briefBlock(brief: string): string[] {
 
 /** The working-directory fact line; the label says whose directory it is. */
 function cwdLine(origin: AskOrigin): string {
-  const cwd = origin.cwd.replace(/[\r\n]+/g, " ");
+  const cwd = escapeDelimiters(origin.cwd.replace(/[\r\n]+/g, " "));
   return origin.cwdOf === "requester"
     ? `- Working directory: ${cwd} (the requesting agent's)`
     : `- Working directory: ${cwd} (this session's; the requesting agent's is not known)`;
