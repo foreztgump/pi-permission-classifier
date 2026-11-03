@@ -27,6 +27,8 @@ function bashPayload(
       matchedPattern: null,
       commandContext: null,
       executedUnit: null,
+      matchedSpelling: null,
+      decidingPath: null,
     },
     evidence,
     annotations: [],
