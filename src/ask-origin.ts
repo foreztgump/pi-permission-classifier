@@ -87,23 +87,12 @@ function recordFor(
 ): { cwd?: string; brief?: string } | undefined {
   let found: { cwd?: string; brief?: string } | undefined;
   for (const entry of entries) {
-    if (entry.type !== "custom" || entry.customType !== PSTACK_AGENTS_ENTRY)
-      continue;
-    const agent = (
-      entry.data as { agent?: Record<string, unknown> } | undefined
-    )?.agent;
-    if (
-      agent === null ||
-      typeof agent !== "object" ||
-      agent.sessionId !== sessionId
-    )
-      continue;
+    if (entry.type !== "custom" || entry.customType !== PSTACK_AGENTS_ENTRY) continue;
+    const agent = (entry.data as { agent?: Record<string, unknown> } | undefined)?.agent;
+    if (agent === null || typeof agent !== "object" || agent.sessionId !== sessionId) continue;
     const cwd = nonEmptyString(agent.cwd);
     const brief = nonEmptyString(agent.brief);
-    found = {
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(brief === undefined ? {} : { brief }),
-    };
+    found = { ...(cwd === undefined ? {} : { cwd }), ...(brief === undefined ? {} : { brief }) };
   }
   return found;
 }
@@ -137,13 +126,9 @@ function parseJson(text: string): unknown {
 
 /** A session entry whose message can be read as user text: a role, and string or array content. */
 function isReadableMessage(entry: unknown): entry is SessionEntry {
-  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message))
-    return false;
+  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) return false;
   const { role, content } = entry.message;
-  return (
-    typeof role === "string" &&
-    (typeof content === "string" || Array.isArray(content))
-  );
+  return typeof role === "string" && (typeof content === "string" || Array.isArray(content));
 }
 
 /**
@@ -161,25 +146,14 @@ function childSession(
   const probe = readHead(file, HEADER_PROBE_BYTES);
   if (probe === undefined) return undefined;
   const header = parseJson(probe.split("\n", 1)[0] ?? "");
-  if (!isRecord(header) || header.type !== "session" || header.id !== sessionId)
-    return undefined;
+  if (!isRecord(header) || header.type !== "session" || header.id !== sessionId) return undefined;
   const head = readHead(file, SESSION_HEAD_BYTES);
   if (head === undefined) return undefined;
-  const messages = head
-    .split("\n")
-    .slice(1)
-    .map(parseJson)
-    .filter(isReadableMessage);
+  const messages = head.split("\n").slice(1).map(parseJson).filter(isReadableMessage);
   const text = firstUserText(messages);
   const cwd = nonEmptyString(header.cwd);
-  const brief =
-    text === null
-      ? undefined
-      : nonEmptyString(text.replace(TASK_PREFIX_RE, ""));
-  return {
-    ...(cwd === undefined ? {} : { cwd }),
-    ...(brief === undefined ? {} : { brief }),
-  };
+  const brief = text === null ? undefined : nonEmptyString(text.replace(TASK_PREFIX_RE, ""));
+  return { ...(cwd === undefined ? {} : { cwd }), ...(brief === undefined ? {} : { brief }) };
 }
 
 /** The child session files listed by one run's status.json, or none. */
@@ -190,15 +164,11 @@ function runSessionFiles(asyncDir: string): string[] {
   } catch {
     return [];
   }
-  const steps =
-    isRecord(status) && Array.isArray(status.steps) ? status.steps : [];
+  const steps = isRecord(status) && Array.isArray(status.steps) ? status.steps : [];
   return steps
     .slice(0, MAX_STEPS_PER_RUN)
     .map((step) => (isRecord(step) ? step.sessionFile : undefined))
-    .filter(
-      (file): file is string =>
-        typeof file === "string" && file.endsWith(".jsonl"),
-    );
+    .filter((file): file is string => typeof file === "string" && file.endsWith(".jsonl"));
 }
 
 /**
@@ -215,11 +185,7 @@ function subagentChildFor(
     const entry = entries[i];
     if (entry?.type !== "message") continue;
     const message: unknown = entry.message;
-    if (
-      !isRecord(message) ||
-      message.role !== "toolResult" ||
-      message.toolName !== SUBAGENT_TOOL
-    ) {
+    if (!isRecord(message) || message.role !== "toolResult" || message.toolName !== SUBAGENT_TOOL) {
       continue;
     }
     const asyncDir = isRecord(message.details)
@@ -259,8 +225,7 @@ export function readAskOrigin(
           ? undefined
           : (recordFor(entries, requester.sessionId) ??
             subagentChildFor(entries, requester.sessionId));
-      const brief =
-        record?.brief === undefined ? undefined : clip(record.brief).text;
+      const brief = record?.brief === undefined ? undefined : clip(record.brief).text;
       return {
         cwd: record?.cwd ?? cwd,
         cwdOf: record?.cwd === undefined ? "session" : "requester",
