@@ -128,7 +128,7 @@ function parseJson(text: string): unknown {
 function isReadableMessage(entry: unknown): entry is SessionEntry {
   if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) return false;
   const { role, content } = entry.message;
-  return typeof role === "string" && (typeof content === "string" || Array.isArray(content));
+  return typeof role === "string" && (typeof content === "string" || (Array.isArray(content) && content.every(isRecord)));
 }
 
 /**

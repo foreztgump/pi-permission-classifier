@@ -332,6 +332,11 @@ describe("readAskOrigin, forwarded ask from a pi-subagents child", () => {
         message: { content: "no role" },
       }),
       JSON.stringify({ type: "message", id: "m0d", message: null }),
+      JSON.stringify({
+        type: "message",
+        id: "m0e",
+        message: { role: "user", content: [null, { type: "text", text: "half written" }] },
+      }),
     ];
     const entries = [
       subagentRun([
