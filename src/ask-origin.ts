@@ -13,10 +13,22 @@
  * entry is the match. No match means no brief, and the cwd falls back to this
  * session's, marked so the judge cannot mistake it for the requester's.
  *
+ * The pi-subagents package writes no such entry. For an ask from one of its
+ * children the parent session holds only the launch: a `subagent` tool result
+ * whose details name the run's directory. That directory's status.json lists
+ * each step's child session file, and the file's header holds the child's
+ * session id and cwd; its first user message is the brief (`Task: <brief>`).
+ * The child session id is not in the parent session, so the match reads the
+ * candidate runs' files and compares the header id with the requester's. A
+ * file that is missing or malformed is no match, and the fallback above holds.
+ *
  * Nested agents need nothing extra: each process reads its own session, so a
  * child that serves its own child's ask finds that grandchild, and the root
  * finds the child it started when the ask arrives from there.
  */
+
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
+import { join } from "node:path";
 
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
@@ -24,6 +36,21 @@ import { clip, firstUserText, isSubagentProcess } from "./user-intent";
 
 /** The custom entry type pstack's agent launcher writes for each subagent. */
 const PSTACK_AGENTS_ENTRY = "pstack-agents";
+
+/** The tool name pi-subagents gives its launcher. */
+const SUBAGENT_TOOL = "subagent";
+
+/** Launch results scanned per ask, newest first. */
+const MAX_RUNS_SCANNED = 32;
+
+/** Steps read per run (a chain or parallel run lists one per step). */
+const MAX_STEPS_PER_RUN = 32;
+
+/** Bytes read from the head of a child session file: its header and first user message. */
+const SESSION_HEAD_BYTES = 256 * 1024;
+
+/** The prefix pi-subagents puts on the brief in the child's first user message. */
+const TASK_PREFIX_RE = /^Task: /;
 
 /** Where one ask came from, as the prompt renders it. */
 export interface AskOrigin {
@@ -67,6 +94,103 @@ function recordFor(
   return found;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+/** The first bytes of a file as text; undefined when it cannot be read. */
+function readHead(path: string, maxBytes: number): string | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const buffer = Buffer.alloc(maxBytes);
+    const read = readSync(fd, buffer, 0, maxBytes, 0);
+    return buffer.toString("utf-8", 0, read);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The cwd and brief of a pi-subagents child session file when its header id
+ * is `sessionId`, else undefined. Only the head of the file is read; a line
+ * cut by that limit does not parse and is skipped. The file is written by a
+ * child process: its cwd and text are context for the judge, never a path to
+ * act on.
+ */
+function childSession(
+  file: string,
+  sessionId: string,
+): { cwd?: string; brief?: string } | undefined {
+  const head = readHead(file, SESSION_HEAD_BYTES);
+  if (head === undefined) return undefined;
+  const [headerLine = "", ...rest] = head.split("\n");
+  const header = parseJson(headerLine);
+  if (!isRecord(header) || header.type !== "session" || header.id !== sessionId) return undefined;
+  const messages = rest
+    .map(parseJson)
+    .filter((entry): entry is SessionEntry => isRecord(entry) && entry.type === "message");
+  const text = firstUserText(messages);
+  const cwd = nonEmptyString(header.cwd);
+  const brief = text === null ? undefined : nonEmptyString(text.replace(TASK_PREFIX_RE, ""));
+  return { ...(cwd === undefined ? {} : { cwd }), ...(brief === undefined ? {} : { brief }) };
+}
+
+/** The child session files listed by one run's status.json, or none. */
+function runSessionFiles(asyncDir: string): string[] {
+  let status: unknown;
+  try {
+    status = parseJson(readFileSync(join(asyncDir, "status.json"), "utf-8"));
+  } catch {
+    return [];
+  }
+  const steps = isRecord(status) && Array.isArray(status.steps) ? status.steps : [];
+  return steps
+    .slice(0, MAX_STEPS_PER_RUN)
+    .map((step) => (isRecord(step) ? step.sessionFile : undefined))
+    .filter((file): file is string => typeof file === "string" && file.endsWith(".jsonl"));
+}
+
+/**
+ * The pi-subagents child with this session id, found through the `subagent`
+ * launch results in the branch (newest first, at most MAX_RUNS_SCANNED); the
+ * first run whose session file carries the id wins.
+ */
+function subagentChildFor(
+  entries: readonly SessionEntry[],
+  sessionId: string,
+): { cwd?: string; brief?: string } | undefined {
+  let scanned = 0;
+  for (let i = entries.length - 1; i >= 0 && scanned < MAX_RUNS_SCANNED; i--) {
+    const entry = entries[i];
+    if (entry?.type !== "message") continue;
+    const message: unknown = entry.message;
+    if (!isRecord(message) || message.role !== "toolResult" || message.toolName !== SUBAGENT_TOOL) {
+      continue;
+    }
+    const asyncDir = isRecord(message.details)
+      ? nonEmptyString(message.details.asyncDir)
+      : undefined;
+    if (asyncDir === undefined) continue;
+    scanned += 1;
+    for (const file of runSessionFiles(asyncDir)) {
+      const found = childSession(file, sessionId);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 /**
  * The origin of one ask, or undefined when it cannot be read (no session, or
  * any throw), so the prompt renders as it did before.
@@ -87,7 +211,10 @@ export function readAskOrigin(
     const entries = source.sessionManager.getBranch();
     if (requester.forwarded) {
       const record =
-        requester.sessionId === null ? undefined : recordFor(entries, requester.sessionId);
+        requester.sessionId === null
+          ? undefined
+          : (recordFor(entries, requester.sessionId) ??
+            subagentChildFor(entries, requester.sessionId));
       const brief = record?.brief === undefined ? undefined : clip(record.brief).text;
       return {
         cwd: record?.cwd ?? cwd,
