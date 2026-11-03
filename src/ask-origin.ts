@@ -46,7 +46,10 @@ const MAX_RUNS_SCANNED = 32;
 /** Steps read per run (a chain or parallel run lists one per step). */
 const MAX_STEPS_PER_RUN = 32;
 
-/** Bytes read from the head of a child session file: its header and first user message. */
+/** Bytes read first from every candidate child session file: enough for its header line. */
+const HEADER_PROBE_BYTES = 8 * 1024;
+
+/** Bytes read from the head of the matching child session file: its header and first user message. */
 const SESSION_HEAD_BYTES = 256 * 1024;
 
 /** The prefix pi-subagents puts on the brief in the child's first user message. */
@@ -84,12 +87,23 @@ function recordFor(
 ): { cwd?: string; brief?: string } | undefined {
   let found: { cwd?: string; brief?: string } | undefined;
   for (const entry of entries) {
-    if (entry.type !== "custom" || entry.customType !== PSTACK_AGENTS_ENTRY) continue;
-    const agent = (entry.data as { agent?: Record<string, unknown> } | undefined)?.agent;
-    if (agent === null || typeof agent !== "object" || agent.sessionId !== sessionId) continue;
+    if (entry.type !== "custom" || entry.customType !== PSTACK_AGENTS_ENTRY)
+      continue;
+    const agent = (
+      entry.data as { agent?: Record<string, unknown> } | undefined
+    )?.agent;
+    if (
+      agent === null ||
+      typeof agent !== "object" ||
+      agent.sessionId !== sessionId
+    )
+      continue;
     const cwd = nonEmptyString(agent.cwd);
     const brief = nonEmptyString(agent.brief);
-    found = { ...(cwd === undefined ? {} : { cwd }), ...(brief === undefined ? {} : { brief }) };
+    found = {
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(brief === undefined ? {} : { brief }),
+    };
   }
   return found;
 }
@@ -103,7 +117,7 @@ function readHead(path: string, maxBytes: number): string | undefined {
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
-    const buffer = Buffer.alloc(maxBytes);
+    const buffer = Buffer.allocUnsafe(maxBytes);
     const read = readSync(fd, buffer, 0, maxBytes, 0);
     return buffer.toString("utf-8", 0, read);
   } catch {
@@ -121,10 +135,22 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** A session entry whose message can be read as user text: a role, and string or array content. */
+function isReadableMessage(entry: unknown): entry is SessionEntry {
+  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message))
+    return false;
+  const { role, content } = entry.message;
+  return (
+    typeof role === "string" &&
+    (typeof content === "string" || Array.isArray(content))
+  );
+}
+
 /**
  * The cwd and brief of a pi-subagents child session file when its header id
- * is `sessionId`, else undefined. Only the head of the file is read; a line
- * cut by that limit does not parse and is skipped. The file is written by a
+ * is `sessionId`, else undefined. A small head is read first and compared;
+ * only the matching file is read further. A line cut by a limit does not
+ * parse and is skipped (a header cut by the first limit is no match). The file is written by a
  * child process: its cwd and text are context for the judge, never a path to
  * act on.
  */
@@ -132,18 +158,28 @@ function childSession(
   file: string,
   sessionId: string,
 ): { cwd?: string; brief?: string } | undefined {
+  const probe = readHead(file, HEADER_PROBE_BYTES);
+  if (probe === undefined) return undefined;
+  const header = parseJson(probe.split("\n", 1)[0] ?? "");
+  if (!isRecord(header) || header.type !== "session" || header.id !== sessionId)
+    return undefined;
   const head = readHead(file, SESSION_HEAD_BYTES);
   if (head === undefined) return undefined;
-  const [headerLine = "", ...rest] = head.split("\n");
-  const header = parseJson(headerLine);
-  if (!isRecord(header) || header.type !== "session" || header.id !== sessionId) return undefined;
-  const messages = rest
+  const messages = head
+    .split("\n")
+    .slice(1)
     .map(parseJson)
-    .filter((entry): entry is SessionEntry => isRecord(entry) && entry.type === "message");
+    .filter(isReadableMessage);
   const text = firstUserText(messages);
   const cwd = nonEmptyString(header.cwd);
-  const brief = text === null ? undefined : nonEmptyString(text.replace(TASK_PREFIX_RE, ""));
-  return { ...(cwd === undefined ? {} : { cwd }), ...(brief === undefined ? {} : { brief }) };
+  const brief =
+    text === null
+      ? undefined
+      : nonEmptyString(text.replace(TASK_PREFIX_RE, ""));
+  return {
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(brief === undefined ? {} : { brief }),
+  };
 }
 
 /** The child session files listed by one run's status.json, or none. */
@@ -154,11 +190,15 @@ function runSessionFiles(asyncDir: string): string[] {
   } catch {
     return [];
   }
-  const steps = isRecord(status) && Array.isArray(status.steps) ? status.steps : [];
+  const steps =
+    isRecord(status) && Array.isArray(status.steps) ? status.steps : [];
   return steps
     .slice(0, MAX_STEPS_PER_RUN)
     .map((step) => (isRecord(step) ? step.sessionFile : undefined))
-    .filter((file): file is string => typeof file === "string" && file.endsWith(".jsonl"));
+    .filter(
+      (file): file is string =>
+        typeof file === "string" && file.endsWith(".jsonl"),
+    );
 }
 
 /**
@@ -175,7 +215,11 @@ function subagentChildFor(
     const entry = entries[i];
     if (entry?.type !== "message") continue;
     const message: unknown = entry.message;
-    if (!isRecord(message) || message.role !== "toolResult" || message.toolName !== SUBAGENT_TOOL) {
+    if (
+      !isRecord(message) ||
+      message.role !== "toolResult" ||
+      message.toolName !== SUBAGENT_TOOL
+    ) {
       continue;
     }
     const asyncDir = isRecord(message.details)
@@ -215,7 +259,8 @@ export function readAskOrigin(
           ? undefined
           : (recordFor(entries, requester.sessionId) ??
             subagentChildFor(entries, requester.sessionId));
-      const brief = record?.brief === undefined ? undefined : clip(record.brief).text;
+      const brief =
+        record?.brief === undefined ? undefined : clip(record.brief).text;
       return {
         cwd: record?.cwd ?? cwd,
         cwdOf: record?.cwd === undefined ? "session" : "requester",
