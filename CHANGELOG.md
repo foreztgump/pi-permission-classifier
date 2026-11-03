@@ -18,7 +18,12 @@ this project adheres to
   matched on the requester's session id gives the child's cwd and brief; with
   no match the cwd is this session's, marked as such, and there is no brief.
   A subagent process judging its own ask uses its first user message as the
-  brief. The shipped rubric says how to use both; a custom rubric gets the
+  brief. A child of the pi-subagents package leaves no such entry; its ask is
+  matched through the parent's `subagent` launch results (newest 32): each
+  run's `status.json` lists the child session files, and the file whose
+  header id is the requester's gives the cwd and, from its first user
+  message without the `Task: ` prefix, the brief. A missing or malformed
+  file is no match. A pstack entry wins when both exist. The shipped rubric says how to use both; a custom rubric gets the
   blocks without rules. The quick judge is unchanged. New seam
   `getAskOrigin(requester)` on the reviewer and the link.
 
