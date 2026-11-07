@@ -108,17 +108,22 @@ function readsEvidence(source: string): boolean {
 }
 
 describe("scoped evidence read", () => {
-  it("only context.ts reads payload evidence, pinned to the bash full-command entry", () => {
+  it("only context.ts reads payload evidence, pinned to the bash full-command entry and a command tool's input", () => {
     for (const name of LINK_FILES) {
       const source = src(name);
       if (name === "context.ts") {
         expect(readsEvidence(source), "context.ts must read evidence").toBe(
           true,
         );
-        // The pin: the one read admits only the bash kind and the
-        // designated label.
-        expect(source).toContain('payload.kind !== "bash"');
+        // The pin: the one read admits only the bash kind with the
+        // designated label, and a tool-kind or mcp-kind payload of a
+        // configured command tool with its input label.
+        expect(source).toContain('payload.kind === "bash"');
+        expect(source).toContain('payload.kind === "tool"');
+        expect(source).toContain('payload.kind === "mcp"');
+        expect(source).toContain("commandTools.includes(tool)");
         expect(source).toContain('"full command"');
+        expect(source).toContain('"input"');
       } else {
         expect(readsEvidence(source), `${name} reads payload evidence`).toBe(
           false,

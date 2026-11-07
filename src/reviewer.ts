@@ -194,7 +194,10 @@ export function createClassifierReviewer(
       // link's onError, and never an allow.
       const verdict = backstopVerdict(deps);
       try {
-        const context = extractFullCommandContext(details.payload);
+        const context = extractFullCommandContext(
+          details.payload,
+          commandToolsOf(deps),
+        );
         log.review(DECISION_EVENT, {
           judge: JUDGE_TAG,
           requestId: details.requestId,
@@ -234,6 +237,15 @@ function backstopVerdict(deps: ClassifierReviewerDeps): AuthorizerVerdict {
   return applyVerdictPolicy({ kind: "failure", failure: "internal-error" }, policy);
 }
 
+/** The configured command tools, or none when the config is absent or unreadable. */
+function commandToolsOf(deps: ClassifierReviewerDeps): readonly string[] {
+  try {
+    return deps.getConfig()?.commandTools ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** The classifier link's verdict policy from its config. */
 function policyOf(config: ClassifierConfig): VerdictPolicy {
   return { verdicts: config.verdicts, onError: config.onError };
@@ -249,9 +261,11 @@ async function decide(
   const { requestId } = details;
   const surface = gateSurfaceOf(details);
   const value = details.payload.request.value;
-  const context = extractFullCommandContext(details.payload);
-
   const config = deps.getConfig();
+  const context = extractFullCommandContext(
+    details.payload,
+    config?.commandTools,
+  );
   if (!config) {
     return recordPreModel(deps, log, undefined, {
       requestId,

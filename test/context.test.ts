@@ -146,3 +146,55 @@ describe("extractFullCommandContext", () => {
     }
   });
 });
+
+describe("extractFullCommandContext for a command tool", () => {
+  const toolPayload = (
+    toolName: string,
+    label = "input",
+    kind: PromptPayload["kind"] = "tool",
+  ): PromptPayload => ({
+    ...bashPayload([{ label, text: FULL_COMMAND, detail: null }], kind),
+    request: {
+      ...bashPayload([]).request,
+      surface: toolName,
+      toolName,
+      value: toolName,
+    },
+  });
+
+  it("reads the input entry of a tool named in commandTools as the full command", () => {
+    expect(
+      extractFullCommandContext(toolPayload("bash_unsandboxed"), [
+        "bash_unsandboxed",
+      ]),
+    ).toEqual({
+      text: FULL_COMMAND,
+      bytes: FULL_COMMAND_BYTES,
+      hash12: FULL_COMMAND_HASH12,
+    });
+  });
+
+  it("reads the input entry of an mcp-kind ask for a configured tool too", () => {
+    const tool = "mcp__playwright__browser_navigate";
+    expect(
+      extractFullCommandContext(toolPayload(tool, "input", "mcp"), [tool])?.text,
+    ).toBe(FULL_COMMAND);
+  });
+
+  it.each([
+    ["no commandTools", toolPayload("bash_unsandboxed"), []],
+    ["another tool", toolPayload("write"), ["bash_unsandboxed"]],
+    [
+      "a full command label",
+      toolPayload("bash_unsandboxed", "full command"),
+      ["bash_unsandboxed"],
+    ],
+    [
+      "a path-kind payload",
+      toolPayload("bash_unsandboxed", "input", "path"),
+      ["bash_unsandboxed"],
+    ],
+  ])("returns null for %s", (_name, payload, commandTools) => {
+    expect(extractFullCommandContext(payload, commandTools)).toBeNull();
+  });
+});

@@ -98,6 +98,11 @@ export const classifierConfigSchema = z
       .int()
       .positive()
       .default(DEFAULT_CONTEXT_BUDGET_BYTES),
+    // Names of tools that run a shell command, such as bash_unsandboxed. The
+    // permission system asks about them as a plain tool, so the command is
+    // only in the "input" preview a registered tool-input formatter renders.
+    // A tool named here has that preview read as the full command.
+    commandTools: z.array(z.string().min(1)).optional(),
     // The top-level fields above and below are the LLM judge's settings.
     // Unknown keys, such as the renamed systemOne and classifierEnabled, are
     // dropped; the loader reports those two.

@@ -9,6 +9,11 @@ this project adheres to
 
 ### Added
 
+- `commandTools` config: tool names whose `input` preview is a shell command
+  or a URL (such as `bash_unsandboxed` or an MCP navigate tool). The judge now
+  reads that preview as the full command of the ask, so it can rule on it
+  instead of the bare tool name, and the context budget gate covers it.
+  [TEE-798]
 - The LLM judge's prompt now carries a `Working directory` fact line and, for
   an ask from a subagent, an `Agent brief` block: the task text the parent
   agent gave the subagent, labelled as written by the parent agent, not the
