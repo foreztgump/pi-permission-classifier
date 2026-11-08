@@ -4,8 +4,10 @@
  *
  * A bash gate that intercepts one unit of a larger command attaches the whole
  * command as the payload's single "full command" evidence entry
- * (agent-authored ask text, never a tool result). This module extracts exactly
- * that entry — bash kind, designated label, non-empty string text — and
+ * (agent-authored ask text, never a tool result). A tool-kind or mcp-kind ask
+ * for a tool named in the config's `commandTools` carries its command in the
+ * "input" preview entry instead. This module extracts that one entry — bash kind
+ * or a configured command tool, designated label, non-empty string text — and
  * measures it for the budget gate and the audit trail. Everything else — other
  * kinds, other labels, malformed shapes — yields null, and nothing here
  * throws: absence degrades to the value-only prompt.
@@ -51,7 +53,8 @@ function commandLabelOf(
 }
 
 /**
- * Extract the full-command context from a bash-kind ask payload, or null.
+ * Extract the full-command context from a bash-kind payload, or from a payload of a
+ * configured command tool, or null.
  *
  * A tool-kind or mcp-kind payload whose tool name is in `commandTools` counts
  * as well, and its "input" entry is the command. Null for any other payload kind, any

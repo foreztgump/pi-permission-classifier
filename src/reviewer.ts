@@ -237,7 +237,7 @@ function backstopVerdict(deps: ClassifierReviewerDeps): AuthorizerVerdict {
   return applyVerdictPolicy({ kind: "failure", failure: "internal-error" }, policy);
 }
 
-/** The configured command tools, or none when the config is absent or unreadable. */
+/** The config's `commandTools`, or an empty list when the config is absent or unreadable. */
 function commandToolsOf(deps: ClassifierReviewerDeps): readonly string[] {
   try {
     return deps.getConfig()?.commandTools ?? [];
