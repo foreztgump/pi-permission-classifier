@@ -657,6 +657,71 @@ describe("full-command context", () => {
   });
 });
 
+/** A bash_unsandboxed ask: a tool-kind payload whose "input" evidence is the command. */
+function unsandboxedAsk(command: string): PromptPermissionDetails {
+  const details = askDetails({
+    surface: "bash_unsandboxed",
+    toolName: "bash_unsandboxed",
+    value: "bash_unsandboxed",
+  });
+  return {
+    ...details,
+    payload: {
+      ...details.payload,
+      kind: "tool",
+      evidence: [{ label: "input", text: command, detail: null }],
+    },
+  };
+}
+
+describe("command tools", () => {
+  const COMMAND = "cd /p && git push origin refs/heads/feat/x 2>&1 | tail -5";
+  const withTool = (extra: Record<string, unknown> = {}) =>
+    classifierConfigSchema.parse({ commandTools: ["bash_unsandboxed"], ...extra });
+
+  it("renders the command of a configured tool as the full command and logs its measurements", async () => {
+    const complete = completeReporting({ verdict: "allow" });
+    const config = withTool();
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, getConfig: () => config }),
+    );
+    const log = fakeLog();
+    expect(await authorize(unsandboxedAsk(COMMAND), QUERY, log)).toEqual({
+      kind: "allow",
+    });
+    const prompt = promptSentTo(complete);
+    expect(prompt).toContain("- Tool: bash_unsandboxed");
+    expect(prompt).toContain(`<full-command>\n${COMMAND}\n</full-command>`);
+    expect(decisionEntry(log)).toMatchObject({
+      contextIncluded: true,
+      contextBytes: Buffer.byteLength(COMMAND, "utf8"),
+    });
+  });
+
+  it("defers an over-budget command of a configured tool before the model", async () => {
+    const complete = completeReporting({ verdict: "allow" });
+    const config = withTool({ contextBudgetBytes: 8 });
+    const authorize = createClassifierReviewer(
+      makeDeps({ complete, getConfig: () => config }),
+    );
+    const log = fakeLog();
+    expect(await authorize(unsandboxedAsk(COMMAND), QUERY, log)).toEqual({
+      kind: "defer",
+    });
+    expect(complete).not.toHaveBeenCalled();
+    expect(decisionEntry(log)).toMatchObject({
+      deferReason: "context-over-budget",
+    });
+  });
+
+  it("without the tool in commandTools the judge sees no command", async () => {
+    const complete = completeReporting({ verdict: "defer" });
+    const authorize = createClassifierReviewer(makeDeps({ complete }));
+    await authorize(unsandboxedAsk(COMMAND), QUERY, fakeLog());
+    expect(promptSentTo(complete)).not.toContain(COMMAND);
+  });
+});
+
 describe("guidance seam", () => {
   const INCLUDED = {
     path: "/home/you/.pi/agent/AGENTS.md",
