@@ -140,7 +140,8 @@ export type ModelCallDeferReason =
  * a `call-failed` error reply (absent on a timeout/throw before any reply).
  */
 export interface ReviewOutcome {
-  verdict: AuthorizerVerdict;
+  /** The model rules on the whole ask, so it never returns `allow_units`. */
+  verdict: Exclude<AuthorizerVerdict, { kind: "allow_units" }>;
   deferReason?: ModelCallDeferReason;
   latencyMs: number;
   rawReply?: string;
