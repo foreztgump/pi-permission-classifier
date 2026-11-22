@@ -18,6 +18,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { AuthorizerVerdict, PromptPermissionDetails } from "@gotgenes/pi-permission-system";
 
+import type { AskOrigin } from "./ask-origin";
 import type { ClassifierConfig } from "./config-schema";
 import type { FullCommandContext } from "./context";
 import type { IncludedGuidance } from "./guidance";
@@ -112,6 +113,8 @@ export interface ReviewAskInputs {
   guidance?: readonly IncludedGuidance[];
   /** The user's own messages when intent is available; absent renders no user block. */
   userIntent?: UserIntent;
+  /** The working directory and a subagent's brief; absent renders neither. */
+  origin?: AskOrigin;
 }
 
 /**
@@ -137,7 +140,8 @@ export type ModelCallDeferReason =
  * a `call-failed` error reply (absent on a timeout/throw before any reply).
  */
 export interface ReviewOutcome {
-  verdict: AuthorizerVerdict;
+  /** The model rules on the whole ask, so it never returns `allow_units`. */
+  verdict: Exclude<AuthorizerVerdict, { kind: "allow_units" }>;
   deferReason?: ModelCallDeferReason;
   latencyMs: number;
   rawReply?: string;
@@ -168,6 +172,7 @@ export async function reviewAsk(inputs: ReviewAskInputs): Promise<ReviewOutcome>
             inputs.context ?? null,
             inputs.guidance ?? [],
             inputs.userIntent,
+            inputs.origin,
           ),
           timestamp: Date.now(),
         },

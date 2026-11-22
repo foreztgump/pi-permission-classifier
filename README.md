@@ -168,6 +168,7 @@ and every quick judge ask is then `model-unresolved`; repeat `provider` and
 | `surfaces` | ignored | Accepted so older config files still parse, but ignored: every surface outside the `path` and `external_directory` families is judged. A file that sets it logs one warning at load: `This field is ignored: every surface outside the path and external_directory families is judged.` |
 | `timeoutMs` | `5000` | The LLM judge's own model call budget in milliseconds (positive integer). The quick judge has a separate `quickJudge.timeoutMs`. |
 | `contextBudgetBytes` | `8192` | Cap on the extracted full-command context in UTF-8 bytes (positive integer), for both judges. An over-budget ask is never sent to a model and counts as uncertain: it defers, or denies under `verdicts: "allow-deny"`. Context is never truncated to fit. |
+| `commandTools` | unset | Names of tools that act on a shell command or a URL, such as `bash_unsandboxed` or an MCP navigate tool. The permission system asks about such a tool as a plain tool or MCP ask, so the command or URL is only in the `input` preview that a tool-input formatter registered for the tool renders. A tool named here has that preview read as the full command: the judge sees it, and the budget gate applies to it. Register the formatter so it returns that text alone. |
 | `verdicts` | `"allow-deny-defer"` | Which verdicts the LLM judge may return. See "Verdicts and onError". |
 | `onError` | `"defer"` | What the LLM judge returns on a failure: `"defer"` or `"deny"`. Never allow. |
 | `quickJudge` | unset | The quick judge settings. See "quickJudge settings". |
@@ -360,9 +361,14 @@ named can be allowed and a command you ruled out is not.
   newest messages back to 24,000 characters in total. A message over
   4,000 characters keeps its head and tail.
 - When it is left out: if any message was cut or dropped by the caps, if a
-  message of yours is still queued, or if the ask was forwarded from a
-  subagent, the prompt has no user block and the judge decides on the
-  rubric alone. None of these defers on its own.
+  message of yours is still queued, or if the judge runs in a subagent
+  process (one that sets `PI_SUBAGENT_PARENT_SESSION` or
+  `PI_AGENT_ROUTER_PARENT_SESSION_ID`), the prompt has no user block and
+  the judge decides on the rubric alone. None of these defers on its own.
+- Forwarded asks: an ask a subagent forwards is judged in the root
+  session, which holds your messages, so the block carries them. A subagent
+  process never sends its session's user messages, for its own asks or for
+  ones it serves, because the parent model wrote that text, not you.
 - Rendering: one data block after the guidance and before the value,
   labelled `Messages the user wrote to the agent in this session, oldest
   first`, with each message in its own `<user-message>` block. A delimiter

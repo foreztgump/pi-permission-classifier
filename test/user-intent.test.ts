@@ -1,9 +1,10 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   MAX_MESSAGE_CHARS,
   MAX_TOTAL_CHARS,
+  isSubagentProcess,
   readUserIntent,
   selectUserText,
 } from "#src/user-intent";
@@ -222,27 +223,65 @@ describe("readUserIntent", () => {
     };
   }
 
-  it("returns the selected messages when nothing was cut, queued or forwarded", () => {
-    expect(readUserIntent(source([user("deploy it"), assistant("ok")]), false)).toEqual({
+  const ROOT_ENV = {};
+  const CHILD_ENV = { PI_SUBAGENT_PARENT_SESSION: "root-session" };
+  const ROUTER_CHILD_ENV = { PI_AGENT_ROUTER_PARENT_SESSION_ID: "root-session" };
+
+  it("returns the selected messages when nothing was cut or queued", () => {
+    expect(readUserIntent(source([user("deploy it"), assistant("ok")]), ROOT_ENV)).toEqual({
       messages: ["deploy it"],
     });
   });
 
+  it("returns the root session's messages for an ask a subagent forwarded", () => {
+    // The root serves a forwarded ask from its own session; the flag no longer decides.
+    expect(readUserIntent(source([user("deploy it")]), ROOT_ENV)).toEqual({
+      messages: ["deploy it"],
+    });
+  });
+
+  it("returns none in a subagent process, whose user messages are the parent's brief", () => {
+    expect(readUserIntent(source([user("deploy it")]), CHILD_ENV)).toBeUndefined();
+    expect(readUserIntent(source([user("deploy it")]), ROUTER_CHILD_ENV)).toBeUndefined();
+  });
+
+  it("treats an empty parent-session variable as a root process", () => {
+    expect(readUserIntent(source([user("deploy it")]), { PI_SUBAGENT_PARENT_SESSION: "" })).toEqual({
+      messages: ["deploy it"],
+    });
+  });
+
+  it("reads process.env by default", () => {
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "root-session");
+    try {
+      expect(isSubagentProcess()).toBe(true);
+      expect(readUserIntent(source([user("deploy it")]))).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "");
+    vi.stubEnv("PI_AGENT_ROUTER_PARENT_SESSION_ID", "");
+    try {
+      expect(isSubagentProcess()).toBe(false);
+      expect(readUserIntent(source([user("deploy it")]))).toEqual({ messages: ["deploy it"] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("returns none when the selection was cut", () => {
-    expect(readUserIntent(source([user("z".repeat(MAX_MESSAGE_CHARS + 1))]), false)).toBeUndefined();
+    expect(
+      readUserIntent(source([user("z".repeat(MAX_MESSAGE_CHARS + 1))]), ROOT_ENV),
+    ).toBeUndefined();
   });
 
   it("returns none when a user message is queued", () => {
-    expect(readUserIntent(source([user("deploy it")], true), false)).toBeUndefined();
-  });
-
-  it("returns none for an ask forwarded from a subagent", () => {
-    expect(readUserIntent(source([user("deploy it")]), true)).toBeUndefined();
+    expect(readUserIntent(source([user("deploy it")], true), ROOT_ENV)).toBeUndefined();
   });
 
   it("returns none with no session or no user text", () => {
-    expect(readUserIntent(undefined, false)).toBeUndefined();
-    expect(readUserIntent(source([assistant("hi")]), false)).toBeUndefined();
+    expect(readUserIntent(undefined, ROOT_ENV)).toBeUndefined();
+    expect(readUserIntent(source([assistant("hi")]), ROOT_ENV)).toBeUndefined();
   });
 
   it("returns none when reading the session throws", () => {
@@ -254,12 +293,12 @@ describe("readUserIntent", () => {
       },
       hasPendingMessages: () => false,
     };
-    expect(readUserIntent(broken, false)).toBeUndefined();
+    expect(readUserIntent(broken, ROOT_ENV)).toBeUndefined();
   });
 
   it("returns none when the context has no pending-message query", () => {
     expect(
-      readUserIntent({ sessionManager: { getBranch: () => [user("deploy it")] } }, false),
+      readUserIntent({ sessionManager: { getBranch: () => [user("deploy it")] } }, ROOT_ENV),
     ).toBeUndefined();
   });
 });

@@ -36,6 +36,7 @@ import type {
   PromptPermissionDetails,
 } from "@gotgenes/pi-permission-system";
 
+import type { AskOrigin, AskRequester } from "./ask-origin";
 import { CircuitBreaker } from "./breaker";
 import type { ClassifierConfig } from "./config-schema";
 import { extractFullCommandContext, type FullCommandContext } from "./context";
@@ -142,6 +143,12 @@ export interface ClassifierReviewerDeps {
    */
   getUserIntent?: (forwarded: boolean) => UserIntent | undefined;
   /**
+   * Ask origin seam: called once per judged ask right before the model call,
+   * with the requester facts, for the working directory and a subagent's
+   * brief. Absent, undefined or a throw means neither is rendered.
+   */
+  getAskOrigin?: (requester: AskRequester) => AskOrigin | undefined;
+  /**
    * Outcome seam: called once per `classifier.decision` entry with the
    * verdict and defer reason, after the entry is logged. Never called for
    * the surface short-circuits, which write no entry. The reviewer knows
@@ -187,7 +194,10 @@ export function createClassifierReviewer(
       // link's onError, and never an allow.
       const verdict = backstopVerdict(deps);
       try {
-        const context = extractFullCommandContext(details.payload);
+        const context = extractFullCommandContext(
+          details.payload,
+          commandToolsOf(deps),
+        );
         log.review(DECISION_EVENT, {
           judge: JUDGE_TAG,
           requestId: details.requestId,
@@ -227,6 +237,15 @@ function backstopVerdict(deps: ClassifierReviewerDeps): AuthorizerVerdict {
   return applyVerdictPolicy({ kind: "failure", failure: "internal-error" }, policy);
 }
 
+/** The config's `commandTools`, or an empty list when the config is absent or unreadable. */
+function commandToolsOf(deps: ClassifierReviewerDeps): readonly string[] {
+  try {
+    return deps.getConfig()?.commandTools ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** The classifier link's verdict policy from its config. */
 function policyOf(config: ClassifierConfig): VerdictPolicy {
   return { verdicts: config.verdicts, onError: config.onError };
@@ -242,9 +261,11 @@ async function decide(
   const { requestId } = details;
   const surface = gateSurfaceOf(details);
   const value = details.payload.request.value;
-  const context = extractFullCommandContext(details.payload);
-
   const config = deps.getConfig();
+  const context = extractFullCommandContext(
+    details.payload,
+    config?.commandTools,
+  );
   if (!config) {
     return recordPreModel(deps, log, undefined, {
       requestId,
@@ -353,6 +374,7 @@ async function decide(
   }
 
   const userIntent = userIntentFor(deps.getUserIntent, details);
+  const origin = askOriginFor(deps.getAskOrigin, details);
   const outcome = await reviewAsk({
     details,
     config,
@@ -363,6 +385,7 @@ async function decide(
     context,
     guidance: guidance.included,
     ...(userIntent === undefined ? {} : { userIntent }),
+    ...(origin === undefined ? {} : { origin }),
   });
   if (
     outcome.deferReason !== undefined &&
@@ -427,6 +450,26 @@ export function userIntentFor(
 ): UserIntent | undefined {
   try {
     return getUserIntent?.(details.payload?.request?.requester?.forwarded !== false);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The ask origin through the seam, or undefined. An ask whose requester facts
+ * are missing counts as forwarded with no session id, and a throwing seam
+ * gives none.
+ */
+export function askOriginFor(
+  getAskOrigin: ((requester: AskRequester) => AskOrigin | undefined) | undefined,
+  details: PromptPermissionDetails,
+): AskOrigin | undefined {
+  try {
+    const requester = details.payload?.request?.requester;
+    return getAskOrigin?.({
+      forwarded: requester?.forwarded !== false,
+      sessionId: requester?.sessionId ?? null,
+    });
   } catch {
     return undefined;
   }

@@ -5,6 +5,45 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `commandTools` config: tool names whose `input` preview is a shell command
+  or a URL (such as `bash_unsandboxed` or an MCP navigate tool). The judge now
+  reads that preview as the full command of the ask, so it can rule on it
+  instead of the bare tool name, and the context budget gate covers it.
+  [TEE-798]
+- The LLM judge's prompt now carries a `Working directory` fact line and, for
+  an ask from a subagent, an `Agent brief` block: the task text the parent
+  agent gave the subagent, labelled as written by the parent agent, not the
+  user, for scope only and never as approval (capped at 4,000 characters,
+  head and tail; delimiter tags inside it are escaped). The judge process
+  reads both from its own session: a pstack `pstack-agents` custom entry
+  matched on the requester's session id gives the child's cwd and brief; with
+  no match the cwd is this session's, marked as such, and there is no brief.
+  A subagent process judging its own ask uses its first user message as the
+  brief. A child of the pi-subagents package leaves no such entry; its ask is
+  matched through the parent's `subagent` launch results (newest 32): each
+  run's `status.json` lists the child session files, and the file whose
+  header id is the requester's gives the cwd and, from its first user
+  message without the `Task: ` prefix, the brief. A missing or malformed
+  file is no match. A pstack entry wins when both exist. The shipped rubric says how to use both; a custom rubric gets the
+  blocks without rules. The quick judge is unchanged. New seam
+  `getAskOrigin(requester)` on the reviewer and the link.
+
+### Changed
+
+- A forwarded ask is judged with the user messages of the process that
+  serves it. The root session holds what the user wrote, so an ask a
+  subagent forwards now gets the user block; before, every forwarded ask
+  lost it. `readUserIntent` no longer takes the `forwarded` flag; it takes
+  an optional environment and returns none in a subagent process (one that
+  sets `PI_SUBAGENT_PARENT_SESSION` or `PI_AGENT_ROUTER_PARENT_SESSION_ID`),
+  for its own asks too, because a subagent session's user-role messages are
+  the brief its parent model wrote, not words the user wrote. The
+  `getUserIntent(forwarded)` seam keeps its shape.
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

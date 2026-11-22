@@ -14,6 +14,7 @@ describe("classifierConfigSchema", () => {
     expect(parsed.surfaces).toBeUndefined();
     expect(parsed.timeoutMs).toBe(5000);
     expect(parsed.contextBudgetBytes).toBe(8192);
+    expect(parsed.commandTools).toBeUndefined();
     expect(parsed.provider).toBeUndefined();
     expect(parsed.model).toBeUndefined();
     expect(parsed.instructions).toBeUndefined();
@@ -69,6 +70,16 @@ describe("classifierConfigSchema", () => {
   it.each([0, -1, 1.5])("rejects timeoutMs %p", (timeoutMs) => {
     const result = classifierConfigSchema.safeParse({ timeoutMs });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a list of command tool names and rejects an empty name", () => {
+    expect(
+      classifierConfigSchema.parse({ commandTools: ["bash_unsandboxed"] })
+        .commandTools,
+    ).toEqual(["bash_unsandboxed"]);
+    expect(classifierConfigSchema.safeParse({ commandTools: [""] }).success).toBe(
+      false,
+    );
   });
 
   it("accepts a positive integer contextBudgetBytes override", () => {

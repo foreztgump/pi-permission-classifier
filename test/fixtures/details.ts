@@ -19,6 +19,8 @@ export function askDetails(
     matchedPattern: null,
     commandContext: null,
     executedUnit: null,
+    matchedSpelling: null,
+    decidingPath: null,
     ...request,
   };
   return {

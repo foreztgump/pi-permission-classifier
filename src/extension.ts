@@ -60,6 +60,7 @@ import {
   type PermissionsReadyEvent,
 } from "@gotgenes/pi-permission-system";
 
+import { type AskOrigin, type AskRequester, readAskOrigin } from "./ask-origin";
 import {
   COMMAND_NAME,
   type CommandRegistryLike,
@@ -233,9 +234,20 @@ export function createClassifierExtension(
   /**
    * The user intent for one ask, read from the latest session_start ctx at
    * the moment of the ask (never cached); none once the session shut down.
+   * Forwarded or not, this process's own session is the one judged against:
+   * a forwarded ask is served here by the root, whose session holds the
+   * user's messages. A subagent process gets none (see readUserIntent).
    */
-  function getUserIntent(forwarded: boolean): UserIntent | undefined {
-    return readUserIntent(session, forwarded);
+  function getUserIntent(): UserIntent | undefined {
+    return readUserIntent(session);
+  }
+
+  /**
+   * The working directory and, for a subagent's ask, its brief; read live
+   * from this process's session (see readAskOrigin).
+   */
+  function getAskOrigin(requester: AskRequester): AskOrigin | undefined {
+    return readAskOrigin(session, requester);
   }
 
   /** Read the launch flag; each item that does not apply is ignored with a warning. */
@@ -399,6 +411,7 @@ export function createClassifierExtension(
     const judge = createJudgeLink({
       getConfig: effectiveConfig,
       getUserIntent,
+      getAskOrigin,
       warn,
       llm: {
         getSessionModel: () => sessionModel,

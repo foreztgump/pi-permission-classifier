@@ -304,7 +304,7 @@ describe("eval user text", () => {
     const branch = ids.map((id) => ENTRIES.find((e) => e.id === id)!) as never[];
     return readUserIntent(
       { sessionManager: { getBranch: () => branch }, hasPendingMessages: () => false },
-      false,
+      {},
     )?.messages;
   }
 

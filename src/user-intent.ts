@@ -54,7 +54,7 @@ function userMessageText(entry: SessionEntry): string | null {
 }
 
 /** Clip a message to MAX_MESSAGE_CHARS keeping head and tail. */
-function clip(text: string): { text: string; cut: boolean } {
+export function clip(text: string): { text: string; cut: boolean } {
   if (text.length <= MAX_MESSAGE_CHARS) return { text, cut: false };
   const room = MAX_MESSAGE_CHARS - CUT_MARKER.length;
   const head = Math.ceil(room / 2);
@@ -63,6 +63,15 @@ function clip(text: string): { text: string; cut: boolean } {
     text: text.slice(0, head) + CUT_MARKER + text.slice(text.length - tail),
     cut: true,
   };
+}
+
+/** The first user-role message of a branch, or null: in a subagent, its brief. */
+export function firstUserText(entries: readonly SessionEntry[]): string | null {
+  for (const entry of entries) {
+    const text = userMessageText(entry);
+    if (text !== null) return text;
+  }
+  return null;
 }
 
 /** Select the user text the judges see from a session branch. */
@@ -105,18 +114,35 @@ export interface UserIntentSource {
 }
 
 /**
+ * Env vars that name a parent session. A process that sets one is a subagent
+ * child (the convention @gotgenes/pi-permission-system detects children by).
+ */
+const SUBAGENT_PARENT_ENV = ["PI_SUBAGENT_PARENT_SESSION", "PI_AGENT_ROUTER_PARENT_SESSION_ID"] as const;
+
+/** True when this process is a subagent child of another pi session. */
+export function isSubagentProcess(env: NodeJS.ProcessEnv = process.env): boolean {
+  return SUBAGENT_PARENT_ENV.some((name) => (env[name] ?? "") !== "");
+}
+
+/**
  * The user intent for one ask, or undefined when intent is not available:
- * no session, an ask forwarded from a subagent (the parent's user did not
- * write to the child), a user message still queued (the newest word is not
- * in the branch yet), a selection that cut anything, or no user text. A pi
- * without the pending-message query, or any throw, also gives none, so the
- * judges fall back to their rules without intent.
+ * no session, a subagent process (its session's user-role messages are the
+ * brief the parent model wrote, not words the user wrote, so they are not
+ * intent for the child's own asks or for asks it serves), a user message
+ * still queued (the newest word is not in the branch yet), a selection that
+ * cut anything, or no user text. A pi without the pending-message query, or
+ * any throw, also gives none, so the judges fall back to their rules without
+ * intent.
+ *
+ * Whether the ask was forwarded does not matter. A forwarded ask is judged
+ * in the root process, whose session holds the user's real messages, so those
+ * are the intent for it; a subagent process never has any.
  */
 export function readUserIntent(
   source: UserIntentSource | undefined,
-  forwarded: boolean,
+  env: NodeJS.ProcessEnv = process.env,
 ): UserIntent | undefined {
-  if (source === undefined || forwarded) return undefined;
+  if (source === undefined || isSubagentProcess(env)) return undefined;
   try {
     if (typeof source.hasPendingMessages !== "function") return undefined;
     if (source.hasPendingMessages()) return undefined;

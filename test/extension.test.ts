@@ -1334,12 +1334,63 @@ describe("user intent wiring", () => {
     expect(first.sessionManager.getBranch).toHaveBeenCalledTimes(1);
   });
 
-  it("gives no intent for a forwarded ask or while a user message is queued", () => {
-    const getForwarded = registeredReader(makeFakePi(), ctxWithUserText(["task"]));
-    expect(getForwarded(true)).toBeUndefined();
+  it("gives the root session's text for a forwarded ask, and none while a user message is queued", () => {
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "");
+    vi.stubEnv("PI_AGENT_ROUTER_PARENT_SESSION_ID", "");
+    try {
+      const getForwarded = registeredReader(makeFakePi(), ctxWithUserText(["task"]));
+      expect(getForwarded(true)).toEqual({ messages: ["task"] });
 
-    const getQueued = registeredReader(makeFakePi(), ctxWithUserText(["task"], true));
-    expect(getQueued(false)).toBeUndefined();
+      const getQueued = registeredReader(makeFakePi(), ctxWithUserText(["task"], true));
+      expect(getQueued(false)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("gives no intent in a subagent process, forwarded or not", () => {
+    vi.stubEnv("PI_SUBAGENT_PARENT_SESSION", "root-session");
+    try {
+      const getUserIntent = registeredReader(makeFakePi(), ctxWithUserText(["the parent's brief"]));
+      expect(getUserIntent(true)).toBeUndefined();
+      expect(getUserIntent(false)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("reads the origin of an ask from the latest session_start ctx", () => {
+    const pi = makeFakePi();
+    const ctx = {
+      ...ctxWithUserText([]),
+      sessionManager: {
+        getBranch: vi.fn(() => [
+          {
+            type: "custom",
+            customType: "pstack-agents",
+            id: "c1",
+            parentId: null,
+            timestamp: "2026-11-02T00:00:00Z",
+            data: { agent: { id: "a1", sessionId: "child-1", cwd: "/tmp/wt", brief: "do x" } },
+          },
+        ]),
+      },
+    };
+    start(pi);
+    publishForSession();
+    pi.lifecycle.get("session_start")?.({}, ctx);
+    pi.events.get(READY_CHANNEL)?.(READY_EVENT);
+    const getAskOrigin = vi.mocked(createJudgeLink).mock.lastCall?.[0].getAskOrigin;
+    expect(getAskOrigin).toBeTypeOf("function");
+    expect(getAskOrigin!({ forwarded: true, sessionId: "child-1" })).toEqual({
+      cwd: "/tmp/wt",
+      cwdOf: "requester",
+      brief: "do x",
+    });
+    expect(getAskOrigin!({ forwarded: true, sessionId: "nope" })).toEqual({
+      cwd: "/project",
+      cwdOf: "session",
+    });
   });
 
   it("reads no user text after session_shutdown", () => {

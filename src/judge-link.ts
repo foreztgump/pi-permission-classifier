@@ -18,6 +18,7 @@
 
 import type { Authorizer, AuthorizerVerdict } from "@gotgenes/pi-permission-system";
 
+import type { AskOrigin, AskRequester } from "./ask-origin";
 import { CircuitBreaker } from "./breaker";
 import {
   type ClassifierConfig,
@@ -40,7 +41,7 @@ export interface JudgeLinkDeps {
    * The LLM judge's collaborators; its config comes from `getConfig` and its
    * intent from `getUserIntent`.
    */
-  llm: Omit<ClassifierReviewerDeps, "getConfig" | "getUserIntent">;
+  llm: Omit<ClassifierReviewerDeps, "getConfig" | "getUserIntent" | "getAskOrigin">;
   /**
    * The quick judge's collaborators; its settings come from `getConfig` and
    * its intent from `getUserIntent`.
@@ -49,9 +50,14 @@ export interface JudgeLinkDeps {
   /**
    * The user intent for an ask, read live from the session; undefined when
    * intent is not available. `forwarded` is true for an ask a subagent
-   * forwarded.
+   * forwarded; the answer depends on the serving process, not on it.
    */
   getUserIntent?: (forwarded: boolean) => UserIntent | undefined;
+  /**
+   * The working directory and a subagent's brief for an ask, read live; only
+   * the LLM judge renders them. Undefined when not available.
+   */
+  getAskOrigin?: (requester: AskRequester) => AskOrigin | undefined;
   /** Operator warning sink, for the cascade's policy override. */
   warn: (message: string) => void;
 }
@@ -67,6 +73,7 @@ export function createJudgeLink(deps: JudgeLinkDeps): Authorizer["authorize"] {
   const llmJudge = createClassifierReviewer({
     ...deps.llm,
     ...(deps.getUserIntent ? { getUserIntent: deps.getUserIntent } : {}),
+    ...(deps.getAskOrigin ? { getAskOrigin: deps.getAskOrigin } : {}),
     getConfig: deps.getConfig,
   });
 
